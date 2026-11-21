@@ -48,7 +48,7 @@ alone. `sudo` prompts for system packages. Preview without installing:
 
 | Tier | Tools | Method |
 | --- | --- | --- |
-| Core CLI | git, jq, ripgrep, fd, fzf, bat, shellcheck, shfmt, tmux, direnv, watchexec | apt (Ubuntu `fdfind`/`batcat` get linked as `fd`/`bat`) |
+| Core CLI | git, jq, ripgrep, fd, fzf, bat, shellcheck, shfmt, tmux, direnv, watchexec | apt (Ubuntu `fdfind`/`batcat` get linked as `fd`/`bat`; when apt carries no watchexec, as on 24.04, the official static binary goes to `~/.local/bin` with a checksum check) |
 | Snaps | gh, vale | snap |
 | Python | uv, then ruff + ty + mypy as uv tools | official uv installer |
 | Writing | bun, then cspell + markdownlint-cli2 as bun globals | official bun installer |

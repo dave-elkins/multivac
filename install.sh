@@ -58,6 +58,46 @@ link_ubuntu_alias() {
     log "Linked $HOME/.local/bin/$1 -> $(command -v "$2")"
 }
 
+install_watchexec() {
+    # Ubuntu 24.04 (noble) carries no watchexec package. Install the
+    # official static release binary into ~/.local/bin instead.
+    # Assets verified against https://github.com/watchexec/watchexec/releases
+    local arch
+    case "$(uname -m)" in
+        x86_64)  arch="x86_64-unknown-linux-musl" ;;
+        aarch64) arch="aarch64-unknown-linux-musl" ;;
+        *) warn "watchexec: no fallback for architecture $(uname -m)"; return 0 ;;
+    esac
+    local tag version url tmp
+    tag="$(curl -fsSL https://api.github.com/repos/watchexec/watchexec/releases/latest \
+        | jq -r '.tag_name')" \
+        || { warn "watchexec: could not look up the latest release"; return 0; }
+    version="${tag#v}"
+    url="https://github.com/watchexec/watchexec/releases/download/${tag}/watchexec-${version}-${arch}.tar.xz"
+    tmp="$(mktemp -d)"
+    log "  watchexec: downloading ${url}"
+    if ! curl -fsSL "$url" -o "$tmp/watchexec.tar.xz" \
+       || ! curl -fsSL "$url.sha256" -o "$tmp/watchexec.tar.xz.sha256"; then
+        warn "watchexec: download failed. Get it from the watchexec releases page."
+        rm -rf "$tmp"
+        return 0
+    fi
+    local expected actual
+    expected="$(awk '{print $1}' "$tmp/watchexec.tar.xz.sha256")"
+    actual="$(sha256sum "$tmp/watchexec.tar.xz" | awk '{print $1}')"
+    if [ "$expected" != "$actual" ]; then
+        warn "watchexec: checksum mismatch. Get it from the watchexec releases page."
+        rm -rf "$tmp"
+        return 0
+    fi
+    tar -xJf "$tmp/watchexec.tar.xz" -C "$tmp"
+    mkdir -p "$HOME/.local/bin"
+    find "$tmp" -type f -name watchexec -exec cp {} "$HOME/.local/bin/watchexec" \;
+    chmod +x "$HOME/.local/bin/watchexec"
+    log "  watchexec: installed to $HOME/.local/bin/watchexec"
+    rm -rf "$tmp"
+}
+
 check_deps() {
     command -v git >/dev/null 2>&1 || fail "git is required. Install it first."
     command -v jq >/dev/null 2>&1 || fail "jq is required. Install it first (e.g. 'sudo apt install jq' or 'brew install jq')."
@@ -232,6 +272,11 @@ do_bootstrap() {
             # Ubuntu ships 'fdfind' and 'batcat'. Link the expected names.
             link_ubuntu_alias fd fdfind
             link_ubuntu_alias bat batcat
+        fi
+        # Ubuntu 24.04 ships no watchexec package. Fall back to the
+        # official release binary (no sudo needed).
+        if [ "$DRY_RUN" = "0" ] && ! have watchexec; then
+            install_watchexec
         fi
     else
         log "All core CLI tools present"
