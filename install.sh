@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # multivac — personal agent knowledge core
 #
-# Install:    ./install.sh                      (also safe for curl | bash, see README)
-# Update:     ./install.sh                      (pulls latest, re-runs idempotently)
-# Doctor:     ./install.sh --doctor
-# Uninstall:  ./install.sh --uninstall           (removes links and config entry)
-#             ./install.sh --uninstall --purge   (also deletes the clone)
+# Install:   ./install.sh                        (clone + link + config; safe to re-run)
+# Update:    ./install.sh                        (pulls latest, re-runs idempotently)
+# Fresh box: ./install.sh --bootstrap            (also installs the toolchain; sudo)
+#            ./install.sh --bootstrap --dry-run  (preview only, installs nothing)
+# Doctor:    ./install.sh --doctor
+# Uninstall: ./install.sh --uninstall             (removes links and config entry)
+#            ./install.sh --uninstall --purge     (also deletes the clone)
 #
 # What install does:
 #   1. Clones (or updates) the repo to ~/.local/share/multivac
@@ -25,6 +27,26 @@ OPENCODE_CONFIG="$OPENCODE_DIR/opencode.json"
 log()   { printf '  \033[1;32m==>\033[0m %s\n' "$*"; }
 warn()  { printf '  \033[1;33m->>\033[0m %s\n' "$*"; }
 fail()  { printf '  \033[1;31m!!\033[0m %s\n' "$*" >&2; exit 1; }
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+run_step() {
+    # Print the command in dry-run mode; run it otherwise.
+    if [ "${DRY_RUN:-0}" = "1" ]; then
+        printf '  \033[1;34mdry\033[0m %s\n' "$*"
+    else
+        "$@"
+    fi
+}
+
+link_ubuntu_alias() {
+    # $1 = wanted name, $2 = Ubuntu binary name (fd/fdfind, bat/batcat).
+    have "$1" && return 0
+    command -v "$2" >/dev/null 2>&1 || return 0
+    mkdir -p "$HOME/.local/bin"
+    ln -sf "$(command -v "$2")" "$HOME/.local/bin/$1"
+    log "Linked $HOME/.local/bin/$1 -> $(command -v "$2")"
+}
 
 check_deps() {
     command -v git >/dev/null 2>&1 || fail "git is required. Install it first."
@@ -74,7 +96,11 @@ merge_opencode_config() {
     fi
     mkdir -p "$OPENCODE_DIR"
     if [ ! -f "$OPENCODE_CONFIG" ]; then
-        printf '{\n  "$schema": "https://opencode.ai/config.json"\n}\n' > "$OPENCODE_CONFIG"
+        cat > "$OPENCODE_CONFIG" <<'JSON'
+{
+  "$schema": "https://opencode.ai/config.json"
+}
+JSON
     fi
     if jq -e --arg p "$SKILLS_LINK" '(.skills // []) | index($p)' "$OPENCODE_CONFIG" >/dev/null 2>&1; then
         log "opencode.json already lists the multivac skills source"
@@ -133,6 +159,141 @@ do_uninstall() {
     fi
 }
 
+do_bootstrap() {
+    DRY_RUN=0
+    [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
+
+    if [ "$DRY_RUN" = "0" ]; then
+        command -v apt-get >/dev/null 2>&1 \
+            || fail "--bootstrap targets apt-based Linux. No apt-get found."
+        command -v sudo >/dev/null 2>&1 \
+            || fail "--bootstrap needs sudo for system packages."
+    fi
+
+    echo
+    log "Tier 1: core CLI tools (apt)"
+    # binary|apt-package pairs. Install only what is missing.
+    local pairs=(
+        "git|git" "jq|jq" "rg|ripgrep" "fd|fd-find" "fzf|fzf" "bat|bat"
+        "shellcheck|shellcheck" "shfmt|shfmt" "tmux|tmux" "direnv|direnv"
+        "watchexec|watchexec"
+    )
+    local missing_pkgs=()
+    local pair bin pkg
+    for pair in "${pairs[@]}"; do
+        bin="${pair%%|*}"
+        pkg="${pair##*|}"
+        if have "$bin"; then
+            log "  $bin: present"
+        else
+            log "  $bin: missing (apt: $pkg)"
+            missing_pkgs+=("$pkg")
+        fi
+    done
+    if [ "${#missing_pkgs[@]}" -gt 0 ]; then
+        log "Installing: ${missing_pkgs[*]}"
+        run_step sudo apt-get update -y \
+            || warn "apt-get update failed; trying install anyway"
+        for pkg in "${missing_pkgs[@]}"; do
+            # One package at a time. One unavailable package must not
+            # block the rest.
+            run_step sudo apt-get install -y "$pkg" \
+                || warn "could not install $pkg via apt. Install it from its release page."
+        done
+        if [ "$DRY_RUN" = "0" ]; then
+            # Ubuntu ships 'fdfind' and 'batcat'. Link the expected names.
+            link_ubuntu_alias fd fdfind
+            link_ubuntu_alias bat batcat
+        fi
+    else
+        log "All core CLI tools present"
+    fi
+
+    echo
+    log "Tier 2: snaps (gh, vale)"
+    if have snap; then
+        if have gh; then log "  gh: present"; else
+            log "  gh: installing via snap (sudo)"
+            run_step sudo snap install gh --classic \
+                || warn "could not install gh via snap"
+        fi
+        if have vale; then log "  vale: present"; else
+            log "  vale: installing via snap (sudo)"
+            run_step sudo snap install vale \
+                || warn "could not install vale via snap"
+        fi
+    else
+        warn "snap not found. Install gh and vale manually."
+    fi
+
+    echo
+    log "Tier 3: uv and Python tools"
+    if have uv; then log "  uv: present"; else
+        log "  uv: installing via the official installer"
+        run_step sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
+    fi
+    local uv_bin
+    uv_bin="$(command -v uv || true)"
+    if [ -z "$uv_bin" ] && [ -x "$HOME/.local/bin/uv" ]; then
+        uv_bin="$HOME/.local/bin/uv"
+    fi
+    if [ -n "$uv_bin" ]; then
+        local t
+        for t in ruff ty mypy; do
+            if have "$t"; then
+                log "  $t: present"
+            else
+                log "  $t: uv tool install"
+                run_step "$uv_bin" tool install "$t"
+            fi
+        done
+    else
+        warn "uv not found after the install step. Re-run --bootstrap in a new shell."
+    fi
+
+    echo
+    log "Tier 4: bun and writing tools"
+    if have bun; then log "  bun: present"; else
+        log "  bun: installing via the official installer"
+        run_step sh -c 'curl -fsSL https://bun.sh/install | bash'
+    fi
+    local bun_bin
+    bun_bin="$(command -v bun || true)"
+    if [ -z "$bun_bin" ] && [ -x "$HOME/.bun/bin/bun" ]; then
+        bun_bin="$HOME/.bun/bin/bun"
+    fi
+    if [ -n "$bun_bin" ]; then
+        local b
+        for b in cspell markdownlint-cli2; do
+            if have "$b"; then
+                log "  $b: present"
+            else
+                log "  $b: bun install -g"
+                run_step "$bun_bin" install -g "$b"
+            fi
+        done
+    else
+        warn "bun not found after the install step. Re-run --bootstrap in a new shell."
+    fi
+
+    echo
+    log "Tier 5: beads (bd)"
+    if have bd; then
+        log "  bd: present"
+    else
+        log "  bd: installing via the official installer (steveyegge/beads)"
+        run_step sh -c 'curl -sSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash'
+    fi
+
+    echo
+    if [ "$DRY_RUN" = "1" ]; then
+        log "Dry run complete. Nothing was installed."
+    else
+        log "Bootstrap complete. Open a new shell so PATH picks up ~/.local/bin and ~/.bun/bin."
+        log "Then run ./install.sh --doctor to verify."
+    fi
+}
+
 do_doctor() {
     local ok=0
     printf 'multivac doctor\n\n'
@@ -174,6 +335,15 @@ do_doctor() {
     printf '\nSkills that will be discovered by ID:\n'
     find "$MULTIVAC_HOME/skills" -name SKILL.md -printf '%h\n' 2>/dev/null \
         | while read -r d; do printf '    %s\n' "$(basename "$d")"; done | sort
+    printf '\nBootstrap tools (informational):\n'
+    local tools=(
+        git jq rg fd fzf bat shellcheck shfmt tmux direnv watchexec
+        gh snap uv ruff ty mypy bun cspell markdownlint-cli2 vale bd
+    )
+    local t
+    for t in "${tools[@]}"; do
+        if have "$t"; then printf '    %-18s ok\n' "$t"; else printf '    %-18s -\n' "$t"; fi
+    done
     [ "$ok" = "0" ] && printf '\nAll systems nominal.\n' || printf '\nProblems found. Re-run ./install.sh or fix the warnings above.\n'
     exit "$ok"
 }
@@ -182,8 +352,9 @@ case "${1:-install}" in
     install|"")   do_install ;;
     --doctor|-D)  do_doctor ;;
     --uninstall)  do_uninstall "${2:-}" ;;
+    --bootstrap)  do_install; do_bootstrap "${2:-}" ;;
     --help|-h)
-        sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
         ;;
     *) fail "Unknown option: $1 (try --help)" ;;
 esac

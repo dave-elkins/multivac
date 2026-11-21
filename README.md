@@ -39,6 +39,28 @@ Safe to re-run. Update with `./install.sh` (it pulls and re-verifies).
 Check health with `./install.sh --doctor`. Remove with
 `./install.sh --uninstall` (add `--purge` to also delete the clone).
 
+## Fresh-machine bootstrap
+
+`./install.sh --bootstrap` runs the standard install, then installs the
+working toolchain. Missing tools only — anything already present is left
+alone. `sudo` prompts for system packages. Preview without installing:
+`./install.sh --bootstrap --dry-run`.
+
+| Tier | Tools | Method |
+| --- | --- | --- |
+| Core CLI | git, jq, ripgrep, fd, fzf, bat, shellcheck, shfmt, tmux, direnv, watchexec | apt (Ubuntu `fdfind`/`batcat` get linked as `fd`/`bat`) |
+| Snaps | gh, vale | snap |
+| Python | uv, then ruff + ty + mypy as uv tools | official uv installer |
+| Writing | bun, then cspell + markdownlint-cli2 as bun globals | official bun installer |
+| Tracker | beads (`bd`) | official installer (steveyegge/beads) |
+
+Deliberately not installed globally: pytest, prettier, html-validate, knip —
+the canon runs these per-project through `uv run` / `bun run`. The
+Clarafi-review security stack (opengrep, bearer, betterleaks, hadolint) is
+project-specific and stays out of the core bootstrap.
+
+`--doctor` reports the presence of every bootstrap tool.
+
 ## Skills (v1 — the core six)
 
 | Skill | Use |
