@@ -17,7 +17,17 @@
 #
 set -euo pipefail
 
-MULTIVAC_HOME="${MULTIVAC_HOME:-$HOME/.local/share/multivac}"
+# If the script runs from inside a git checkout of this repo, treat that
+# checkout as MULTIVAC_HOME. Otherwise (curl | bash, /tmp download) use the
+# default clone location. Set MULTIVAC_HOME explicitly to override either.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -z "${MULTIVAC_HOME:-}" ]; then
+    if [ -d "$SCRIPT_DIR/.git" ]; then
+        MULTIVAC_HOME="$SCRIPT_DIR"
+    else
+        MULTIVAC_HOME="$HOME/.local/share/multivac"
+    fi
+fi
 MULTIVAC_REPO="${MULTIVAC_REPO:-https://github.com/dave-elkins/multivac.git}"
 AGENTS_SKILLS_DIR="$HOME/.agents/skills"
 SKILLS_LINK="$AGENTS_SKILLS_DIR/multivac"
@@ -194,13 +204,31 @@ do_bootstrap() {
         log "Installing: ${missing_pkgs[*]}"
         run_step sudo apt-get update -y \
             || warn "apt-get update failed; trying install anyway"
-        for pkg in "${missing_pkgs[@]}"; do
-            # One package at a time. One unavailable package must not
-            # block the rest.
-            run_step sudo apt-get install -y "$pkg" \
-                || warn "could not install $pkg via apt. Install it from its release page."
-        done
+        local apt_ok=1
         if [ "$DRY_RUN" = "0" ]; then
+            # A package stuck half-installed blocks every apt install.
+            # Detect it once instead of failing once per package.
+            local audit
+            audit="$(sudo dpkg --audit 2>/dev/null || true)"
+            if [ -n "$audit" ]; then
+                apt_ok=0
+                warn "dpkg reports packages in a broken or pending state. Skipping apt installs."
+                printf '%s\n' "$audit" | sed 's/^/      /'
+                warn "One broken package can block all apt installs. Fix it, then re-run --bootstrap."
+                warn "Re-enable the package's apt repo, then run: sudo apt-get install -f"
+                warn "Or remove the package: sudo dpkg --remove --force-remove-reinstreq <package>"
+            fi
+        fi
+        if [ "$apt_ok" = "1" ]; then
+            local pkg
+            for pkg in "${missing_pkgs[@]}"; do
+                # One package at a time. One unavailable package must not
+                # block the rest.
+                run_step sudo apt-get install -y "$pkg" \
+                    || warn "apt failed for $pkg. Read the error above. Re-run after fixing it."
+            done
+        fi
+        if [ "$DRY_RUN" = "0" ] && [ "$apt_ok" = "1" ]; then
             # Ubuntu ships 'fdfind' and 'batcat'. Link the expected names.
             link_ubuntu_alias fd fdfind
             link_ubuntu_alias bat batcat
