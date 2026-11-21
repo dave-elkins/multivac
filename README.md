@@ -29,11 +29,13 @@ MULTIVAC_HOME=~/code/multivac ./install.sh
 What the installer does:
 
 1. Clones or updates the repo at `~/.local/share/multivac`
-   (override with `MULTIVAC_HOME`).
+   (override with `MULTIVAC_HOME` — running `./install.sh` from inside a
+   checkout makes that checkout the home, no duplicate clone).
 2. Symlinks `skills/` into `~/.agents/skills/multivac` — the open-standard
    location that OpenCode V2 discovers globally.
 3. Adds the skills path to `~/.config/opencode/opencode.json`, backing up the
    file first. Nothing existing is removed.
+4. Links the `mvac` CLI and `sentencefmt` into `~/.local/bin`.
 
 Safe to re-run. Update with `./install.sh` (it pulls and re-verifies).
 Check health with `./install.sh --doctor`. Remove with
@@ -60,6 +62,33 @@ Clarafi-review security stack (opengrep, bearer, betterleaks, hadolint) is
 project-specific and stays out of the core bootstrap.
 
 `--doctor` reports the presence of every bootstrap tool.
+
+## The mvac CLI
+
+`install.sh` links `bin/mvac` into `~/.local/bin`. One CLI for common tasks,
+consistent conventions across repos and machines.
+
+```bash
+mvac wt clone <url> [dir]     # clone a repo and set up its worktree root
+cd "$(mvac wt checkout bugfix)"   # create worktree+branch wt/bugfix, cd into it
+mvac wt list                   # worktrees: name, branch, path, dirty/merged
+mvac wt cleanup --dry-run      # remove merged, clean worktrees (asks first)
+mvac sentencefmt --check docs/ # the canonical one-sentence-per-line formatter
+mvac doctor                    # full health check
+mvac update                    # git pull the multivac clone
+```
+
+Worktree conventions: worktrees live at `<repo>/../.worktrees/<repo>/<name>`
+(override the root with `MVAC_WT_ROOT`), new worktrees get branch `wt/<name>`
+from the default branch, and `wt checkout` prints the path only — it works
+inside `cd "$( ... )"`. Safety: `wt cleanup` removes only worktrees that are
+clean and merged into the default branch, asks each time, never discards
+modified files without `--force`, and deletes the `wt/` branch along with the
+worktree.
+
+`sentencefmt` has exactly one canonical copy here (`tools/sentencefmt.py`),
+linked as a command at install time. Writing projects call the shared command
+instead of vendoring copies.
 
 ## Skills (v1 — the core six)
 
@@ -106,7 +135,8 @@ skill, and the session/mistake-log patterns from my own project repos.
 
 ```
 multivac/
-├── install.sh          # idempotent installer / doctor / uninstall
+├── install.sh          # idempotent installer / bootstrap / doctor / uninstall
+├── bin/mvac            # CLI: worktrees, sentencefmt, doctor, update
 ├── AGENTS.md           # rules for agents working on this repo
 ├── skills/             # thin SKILL.md entry points + fat folders
 │   └── <skill>/
@@ -114,6 +144,7 @@ multivac/
 │       ├── references/
 │       └── scripts/
 ├── knowledge/          # harvested cross-project canon
+├── tools/              # shared command-line tools (sentencefmt)
 ├── docs/
 │   └── MIGRATION.md    # moving to another harness
 └── LICENSE             # MIT

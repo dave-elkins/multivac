@@ -15,7 +15,7 @@ prevents duplicate warnings.
 
 ## 1. sentencefmt — one sentence per line
 
-`sentencefmt.py` reformats Markdown prose so each sentence sits on its own
+`sentencefmt` reformats Markdown prose so each sentence sits on its own
 line. This makes diffs sentence-scoped. Reviewers see exactly which sentence
 changed.
 
@@ -27,18 +27,19 @@ inline code, links, bold, and italics exactly.
 Usage:
 
 ```bash
-python3 sentencefmt.py file.md [file2.md ...]   # fix files in place
-python3 sentencefmt.py --check file.md          # CI mode: exit 1 if changes needed
-cat file.md | python3 sentencefmt.py -          # stdin → stdout
+sentencefmt file.md [file2.md ...]   # fix files in place
+sentencefmt --check file.md         # CI mode: exit 1 if changes needed
+cat file.md | sentencefmt -          # stdin → stdout
 ```
 
 Pass a directory to recurse over `*.md`. Use `--check` in CI. Use the plain
 form locally or in a pre-commit hook.
 
-Keep one canonical copy of `sentencefmt.py` in a stable location and copy it
-into each writing project (canonical copy on Dave's machine:
-`~/code/blog/sentencefmt.py`; a second copy runs from `tools/` in the site
-repo). Extend the `ABBREVIATIONS` set with domain terms as needed.
+The canonical copy lives in the multivac repo (`tools/sentencefmt.py`). The
+multivac installer links it into `~/.local/bin/sentencefmt`, and `mvac
+sentencefmt` runs it too. Do not copy the script into writing projects — call
+the shared command. Extend the `ABBREVIATIONS` set in multivac when a domain
+term needs it, then update every project at once.
 
 ## 2. Vale — prose style linter
 
@@ -254,8 +255,8 @@ repos:
       hooks:
           - id: sentencefmt
             name: Sentence-per-line Markdown formatter
-            entry: python3 sentencefmt.py
-            language: python
+            entry: sentencefmt
+            language: system
             types: [markdown]
             files: '^(content|articles)/'
             pass_filenames: true

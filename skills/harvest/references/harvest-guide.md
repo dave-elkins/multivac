@@ -10,6 +10,7 @@ Where knowledge lives in multivac, and how to add it.
 | Cross-cutting process canon (quality gates, agent authority, mistake log, prose pipeline, design tokens, static-site battery) | Into `knowledge/<topic>.md` at the repo root. |
 | A repeatable task the agent should discover by description | A new skill folder: thin `SKILL.md` + `references/`. |
 | A deterministic check | A `scripts/` file inside the owning skill. |
+| A shared command-line tool useful in several projects | `tools/` in this repo, linked into `~/.local/bin` by the installer, and exposed as an `mvac` subcommand when it fits. |
 
 Skill canon lives inside each skill's `references/` so every skill folder is
 self-contained and portable on its own. `knowledge/` holds canon no single

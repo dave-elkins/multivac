@@ -14,6 +14,7 @@
 #   2. Symlinks its skills/ into ~/.agents/skills/multivac   (open-standard location;
 #      OpenCode V2 discovers global skills here automatically)
 #   3. Adds the skills path to ~/.config/opencode/opencode.json (backup first)
+#   4. Links bin/mvac and tools/sentencefmt.py into ~/.local/bin
 #
 set -euo pipefail
 
@@ -138,6 +139,27 @@ link_skills() {
     fi
 }
 
+link_into_bin() {
+    # $1 = source path, $2 = link name under ~/.local/bin
+    local src="$1" dst="$HOME/.local/bin/$2"
+    mkdir -p "$HOME/.local/bin"
+    if [ -L "$dst" ] && [ "$(readlink "$dst")" = "$src" ]; then
+        log "  $2: link already in place"
+    else
+        if [ -e "$dst" ] && [ ! -L "$dst" ]; then
+            fail "$dst exists and is not a symlink. Remove it or inspect it first."
+        fi
+        ln -sfn "$src" "$dst"
+        log "  $2: linked $dst -> $src"
+    fi
+}
+
+link_cli() {
+    log "Linking the mvac CLI"
+    link_into_bin "$MULTIVAC_HOME/bin/mvac" mvac
+    link_into_bin "$MULTIVAC_HOME/tools/sentencefmt.py" sentencefmt
+}
+
 merge_opencode_config() {
     if [ -f "$OPENCODE_DIR/opencode.jsonc" ] && [ ! -f "$OPENCODE_CONFIG" ]; then
         warn "Found opencode.jsonc. This installer only edits opencode.json."
@@ -173,6 +195,7 @@ do_install() {
     clone_or_update
     link_skills
     merge_opencode_config
+    link_cli
     echo
     log "Installed. Skills discovered by ID:"
     find "$MULTIVAC_HOME/skills" -name SKILL.md -printf '%h\n' 2>/dev/null \
@@ -201,6 +224,16 @@ do_uninstall() {
         mv "$tmp" "$OPENCODE_CONFIG"
         log "Removed skills entry from opencode.json (backup: $backup)"
     fi
+    local name dst
+    for name in mvac sentencefmt; do
+        dst="$HOME/.local/bin/$name"
+        if [ -L "$dst" ]; then
+            rm "$dst"
+            log "Removed $dst"
+        else
+            warn "No symlink at $dst"
+        fi
+    done
     if [ "$purge" = "1" ] && [ -d "$MULTIVAC_HOME/.git" ]; then
         rm -rf "$MULTIVAC_HOME"
         log "Deleted clone at $MULTIVAC_HOME"
@@ -405,6 +438,15 @@ do_doctor() {
         warn "opencode config: $OPENCODE_CONFIG not found"
         ok=1
     fi
+    local bin_name
+    for bin_name in mvac sentencefmt; do
+        if [ -L "$HOME/.local/bin/$bin_name" ] && [ -x "$HOME/.local/bin/$bin_name" ]; then
+            log "CLI link: ~/.local/bin/$bin_name -> $(readlink "$HOME/.local/bin/$bin_name")"
+        else
+            warn "CLI link: ~/.local/bin/$bin_name missing"
+            ok=1
+        fi
+    done
     printf '\nSkills that will be discovered by ID:\n'
     find "$MULTIVAC_HOME/skills" -name SKILL.md -printf '%h\n' 2>/dev/null \
         | while read -r d; do printf '    %s\n' "$(basename "$d")"; done | sort

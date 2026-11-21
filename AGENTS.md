@@ -10,6 +10,10 @@ across all coding and writing projects.
 - `knowledge/` — thick canonical knowledge harvested from projects. See
   `knowledge/README.md` for the index. Some canon lives inside a skill's
   `references/` when that skill owns the topic.
+- `bin/mvac` — the CLI. Thin wrappers over git with conventions added.
+  Never reimplement what git already does.
+- `tools/` — shared command-line tools (`sentencefmt`). One canonical copy,
+  linked into `~/.local/bin` at install. Never vendor copies into projects.
 - `docs/MIGRATION.md` — how to point another harness at these skills.
 - `install.sh` — idempotent installer. Reads `MULTIVAC_HOME` and
   `MULTIVAC_REPO` from the environment.
