@@ -55,6 +55,10 @@ alone. `sudo` prompts for system packages. Preview without installing:
 | Python | uv, then ruff + ty + mypy as uv tools | official uv installer |
 | Writing | bun, then cspell + markdownlint-cli2 as bun globals | official bun installer |
 | Tracker | beads (`bd`) | official installer (steveyegge/beads) |
+| Harness | OpenCode | official installer (`curl -fsSL https://opencode.ai/v2/install \| bash`) |
+
+The bootstrap also self-primes its own prerequisites (git, curl, jq) via apt
+when they are missing, so the one-liner below works on a bare system.
 
 Deliberately not installed globally: pytest, prettier, html-validate, knip —
 the canon runs these per-project through `uv run` / `bun run`. The
@@ -62,6 +66,39 @@ Clarafi-review security stack (opengrep, bearer, betterleaks, hadolint) is
 project-specific and stays out of the core bootstrap.
 
 `--doctor` reports the presence of every bootstrap tool.
+
+## Fresh Ubuntu (WSL2) from zero
+
+On Windows, run PowerShell as Administrator:
+
+```powershell
+wsl --install -d Ubuntu-24.04
+```
+
+Reboot when prompted, launch Ubuntu, and create your Linux user. Then one
+line inside WSL:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dave-elkins/multivac/main/install.sh | bash -s -- --bootstrap
+```
+
+That single command: installs its own prerequisites (git, curl, jq), clones
+multivac, links the skills and the `mvac` CLI into place, and installs the
+whole toolchain — **including OpenCode itself**. Then connect a provider:
+
+```bash
+opencode        # then /connect in the TUI to sign in
+mvac doctor     # verify: all systems nominal
+```
+
+WSL2 notes:
+
+- Ubuntu 24.04 from the Store ships with systemd enabled, so the snap tier
+  (gh, vale) works. If snaps error, enable systemd in `/etc/wsl.conf` and
+  restart WSL (`wsl --shutdown` from PowerShell).
+- Run the bootstrap in your own terminal, not through an agent: several
+  steps need your sudo password, and the OpenCode `/connect` sign-in is
+  interactive.
 
 ## The mvac CLI
 

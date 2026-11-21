@@ -3,7 +3,8 @@
 #
 # Install:   ./install.sh                        (clone + link + config; safe to re-run)
 # Update:    ./install.sh                        (pulls latest, re-runs idempotently)
-# Fresh box: ./install.sh --bootstrap            (also installs the toolchain; sudo)
+# Fresh box: ./install.sh --bootstrap            (also installs the toolchain
+#            and OpenCode itself; sudo)
 #            ./install.sh --bootstrap --dry-run  (preview only, installs nothing)
 # Doctor:    ./install.sh --doctor
 # Uninstall: ./install.sh --uninstall             (removes links and config entry)
@@ -196,6 +197,10 @@ do_install() {
     link_skills
     merge_opencode_config
     link_cli
+    if ! have opencode; then
+        warn "OpenCode is not installed. Re-run with --bootstrap, or:"
+        warn "  curl -fsSL https://opencode.ai/v2/install | bash"
+    fi
     echo
     log "Installed. Skills discovered by ID:"
     find "$MULTIVAC_HOME/skills" -name SKILL.md -printf '%h\n' 2>/dev/null \
@@ -240,6 +245,26 @@ do_uninstall() {
     else
         warn "Clone kept at $MULTIVAC_HOME (use --purge to delete)"
     fi
+}
+
+ensure_core_deps() {
+    # The installer itself needs git, curl, and jq. On a truly fresh
+    # machine, install them before anything else can run.
+    local missing=()
+    have git || missing+=(git)
+    have curl || missing+=(curl)
+    have jq || missing+=(jq)
+    if [ "${#missing[@]}" -eq 0 ]; then return 0; fi
+    command -v apt-get >/dev/null 2>&1 \
+        || fail "Missing prerequisites (${missing[*]}) and no apt-get to install them."
+    command -v sudo >/dev/null 2>&1 \
+        || fail "Missing prerequisites (${missing[*]}). Install them and re-run."
+    log "Installing prerequisites: ${missing[*]} (sudo)"
+    run_step sudo apt-get update -y
+    local p
+    for p in "${missing[@]}"; do
+        run_step sudo apt-get install -y "$p"
+    done
 }
 
 do_bootstrap() {
@@ -392,11 +417,21 @@ do_bootstrap() {
     fi
 
     echo
+    log "Tier 6: OpenCode"
+    if have opencode; then
+        log "  opencode: present"
+    else
+        log "  opencode: installing via the official installer"
+        run_step sh -c 'curl -fsSL https://opencode.ai/v2/install | bash'
+    fi
+
+    echo
     if [ "$DRY_RUN" = "1" ]; then
         log "Dry run complete. Nothing was installed."
     else
         log "Bootstrap complete. Open a new shell so PATH picks up ~/.local/bin and ~/.bun/bin."
-        log "Then run ./install.sh --doctor to verify."
+        log "Then run: opencode  (and /connect in the TUI to sign in to a provider)."
+        log "Verify everything with: ./install.sh --doctor"
     fi
 }
 
@@ -453,7 +488,7 @@ do_doctor() {
     printf '\nBootstrap tools (informational):\n'
     local tools=(
         git jq rg fd fzf bat shellcheck shfmt tmux direnv watchexec
-        gh snap uv ruff ty mypy bun cspell markdownlint-cli2 vale bd
+        gh snap uv ruff ty mypy bun cspell markdownlint-cli2 vale bd opencode
     )
     local t
     for t in "${tools[@]}"; do
@@ -467,7 +502,13 @@ case "${1:-install}" in
     install|"")   do_install ;;
     --doctor|-D)  do_doctor ;;
     --uninstall)  do_uninstall "${2:-}" ;;
-    --bootstrap)  do_install; do_bootstrap "${2:-}" ;;
+    --bootstrap)
+        DRY_RUN=0
+        [ "${2:-}" = "--dry-run" ] && DRY_RUN=1
+        ensure_core_deps
+        do_install
+        do_bootstrap "${2:-}"
+        ;;
     --help|-h)
         sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
         ;;
